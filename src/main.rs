@@ -248,11 +248,11 @@ mod error_in_response {
     #[derive(Debug, Deserialize)]
     pub struct RpcResponse {
         pub result: Option<String>,
-        pub error: Option<RpcError>,
+        pub error: Option<RpcResponseError>,
     }
 
     #[derive(Debug, Deserialize)]
-    pub struct RpcError {
+    pub struct RpcResponseError {
         pub message: String,
     }
 }
@@ -277,7 +277,7 @@ mod nicer_error_handling {
     use super::*;
 
     #[derive(thiserror::Error, Debug)]
-    pub enum RpcApiError {
+    pub enum AppError {
         #[error("Unexpected TCP error:\n{0}")]
         Tcp(reqwest::Error),
         #[error("Request came back with HTTP error response code:\n{0}")]
@@ -292,23 +292,23 @@ mod nicer_error_handling {
 
     pub async fn handle_request<T: DeserializeOwned>(
         builder: reqwest::RequestBuilder,
-    ) -> Result<T, RpcApiError> where {
+    ) -> Result<T, AppError> where {
         let json = builder
             .send()
             .await
-            .map_err(|e| RpcApiError::Tcp(e))?
+            .map_err(|e| AppError::Tcp(e))?
             .error_for_status()
-            .map_err(|e| RpcApiError::HttpResponse(e))?
+            .map_err(|e| AppError::HttpResponse(e))?
             .json::<RpcResponse<T>>()
             .await
-            .map_err(|e| RpcApiError::JsonParse(e))?;
+            .map_err(|e| AppError::JsonParse(e))?;
 
         if let Some(error) = json.error {
-            Err(RpcApiError::Message(error.message))
+            Err(AppError::Message(error.message))
         } else if let Some(result) = json.result {
             Ok(result)
         } else {
-            Err(RpcApiError::Unexpected(format!(
+            Err(AppError::Unexpected(format!(
                 "Expected either a response or an error field and found neither"
             )))
         }
@@ -332,11 +332,11 @@ mod nicer_error_handling {
     #[derive(Debug, Deserialize)]
     pub struct RpcResponse<T> {
         pub result: Option<T>,
-        pub error: Option<RpcError>,
+        pub error: Option<RpcResponseError>,
     }
 
     #[derive(Debug, Deserialize)]
-    pub struct RpcError {
+    pub struct RpcResponseError {
         pub message: String,
     }
 }
