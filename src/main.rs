@@ -9,6 +9,7 @@ async fn main() {
         "handle TCP errors - print DNS error",
         "handle TCP errors - print TCP error",
         "no error handling - print text despite 404 response",
+        "handle HTTP status >= 400 - print 404 error",
     ];
 
     let selection = Select::with_theme(&ColorfulTheme::default())
@@ -28,6 +29,8 @@ async fn main() {
         example_four(client.clone()).await;
     } else if selection == 4 {
         example_five(client.clone()).await;
+    } else if selection == 5 {
+        example_six(client.clone()).await;
     }
 }
 
@@ -94,4 +97,25 @@ async fn example_five(client: reqwest::Client) {
         .unwrap();
 
     println!("{response}");
+}
+
+/// Handle 404 response
+async fn example_six(client: reqwest::Client) {
+    match client
+        .get("https://wikipedia.com/not/a/real/path")
+        .send()
+        .await
+    {
+        Ok(response) => match response.error_for_status() {
+            Ok(response) => {
+                println!("{}", response.text().await.unwrap());
+            }
+            Err(e) => {
+                eprintln!("Received HTTP error status in response:\n{e}");
+            }
+        },
+        Err(e) => {
+            eprintln!("Error making HTTP request:\n{e}");
+        }
+    }
 }
