@@ -1,5 +1,5 @@
 use dialoguer::{theme::ColorfulTheme, Select};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
@@ -194,7 +194,7 @@ mod fail_to_parse {
 
 /// This prints an error
 async fn example_nine(client: reqwest::Client) {
-    let body = error_in_response::Request::new();
+    let body = error_in_response::RpcRequest::new();
 
     match client
         .post("http://localhost:8080/rpc")
@@ -203,7 +203,7 @@ async fn example_nine(client: reqwest::Client) {
         .await
     {
         Ok(response) => match response.error_for_status() {
-            Ok(response) => match response.json::<error_in_response::Response>().await {
+            Ok(response) => match response.json::<error_in_response::RpcResponse>().await {
                 Ok(json) => {
                     if let Some(error) = json.error {
                         eprintln!("Error from RPC server:\n{}", error.message);
@@ -231,12 +231,12 @@ mod error_in_response {
     use super::*;
 
     #[derive(Debug, Serialize)]
-    pub struct Request {
+    pub struct RpcRequest {
         pub method: &'static str,
         pub params: (&'static str, &'static str),
     }
 
-    impl Request {
+    impl RpcRequest {
         pub fn new() -> Self {
             Self {
                 method: "unknown",
@@ -246,27 +246,24 @@ mod error_in_response {
     }
 
     #[derive(Debug, Deserialize)]
-    pub struct Response {
+    pub struct RpcResponse {
         pub result: Option<String>,
-        pub error: Option<Error>,
+        pub error: Option<RpcError>,
     }
 
     #[derive(Debug, Deserialize)]
-    pub struct Error {
+    pub struct RpcError {
         pub message: String,
     }
 }
 
 /// This prints an error
 async fn example_ten(client: reqwest::Client) {
-    let body = nicer_error_handling::Request::new();
+    let body = nicer_error_handling::RpcRequest::new();
 
     let builder = client.post("http://localhost:8080/rpc").json(&body);
 
-    let json =
-        nicer_error_handling::handle_request::<nicer_error_handling::Response>(builder).await;
-
-    match nicer_error_handling::handle_response(json) {
+    match nicer_error_handling::handle_request::<String>(builder).await {
         Ok(result) => {
             println!("{result}");
         }
@@ -277,8 +274,6 @@ async fn example_ten(client: reqwest::Client) {
 }
 
 mod nicer_error_handling {
-    use serde::de::DeserializeOwned;
-
     use super::*;
 
     #[derive(thiserror::Error, Debug)]
@@ -297,45 +292,35 @@ mod nicer_error_handling {
 
     pub async fn handle_request<T: DeserializeOwned>(
         builder: reqwest::RequestBuilder,
-    ) -> Result<T, RpcApiError> {
-        builder
+    ) -> Result<T, RpcApiError> where {
+        let json = builder
             .send()
             .await
             .map_err(|e| RpcApiError::Tcp(e))?
             .error_for_status()
             .map_err(|e| RpcApiError::HttpResponse(e))?
-            .json::<T>()
+            .json::<RpcResponse<T>>()
             .await
-            .map_err(|e| RpcApiError::JsonParse(e))
-    }
+            .map_err(|e| RpcApiError::JsonParse(e))?;
 
-    pub fn handle_response(
-        json: Result<self::Response, RpcApiError>,
-    ) -> Result<String, RpcApiError> {
-        match json {
-            Ok(json) => {
-                if let Some(error) = json.error {
-                    Err(RpcApiError::Message(error.message))
-                } else if let Some(result) = json.result {
-                    Ok(result)
-                } else {
-                    Err(RpcApiError::Unexpected(format!(
-                        "Expected a response or an error and got:\n{:?}",
-                        json
-                    )))
-                }
-            }
-            Err(e) => Err(e),
+        if let Some(error) = json.error {
+            Err(RpcApiError::Message(error.message))
+        } else if let Some(result) = json.result {
+            Ok(result)
+        } else {
+            Err(RpcApiError::Unexpected(format!(
+                "Expected either a response or an error field and found neither"
+            )))
         }
     }
 
     #[derive(Debug, Serialize)]
-    pub struct Request {
+    pub struct RpcRequest {
         pub method: &'static str,
         pub params: (&'static str, &'static str),
     }
 
-    impl Request {
+    impl RpcRequest {
         pub fn new() -> Self {
             Self {
                 method: "unknown",
@@ -345,13 +330,13 @@ mod nicer_error_handling {
     }
 
     #[derive(Debug, Deserialize)]
-    pub struct Response {
-        pub result: Option<String>,
-        pub error: Option<Error>,
+    pub struct RpcResponse<T> {
+        pub result: Option<T>,
+        pub error: Option<RpcError>,
     }
 
     #[derive(Debug, Deserialize)]
-    pub struct Error {
+    pub struct RpcError {
         pub message: String,
     }
 }
