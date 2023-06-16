@@ -1,4 +1,5 @@
 use dialoguer::{theme::ColorfulTheme, Select};
+use serde::Deserialize;
 
 #[tokio::main]
 async fn main() {
@@ -8,8 +9,10 @@ async fn main() {
         "no error handling - panic",
         "handle TCP errors - print DNS error",
         "handle TCP errors - print TCP error",
-        "no error handling - print text despite 404 response",
+        "no HTTP status error handling - print text despite 404 response",
         "handle HTTP status >= 400 - print 404 error",
+        "no JSON parse error handling - panic",
+        "handle JSON parse error handling - print JSON parse error",
     ];
 
     let selection = Select::with_theme(&ColorfulTheme::default())
@@ -31,6 +34,10 @@ async fn main() {
         example_five(client.clone()).await;
     } else if selection == 5 {
         example_six(client.clone()).await;
+    } else if selection == 6 {
+        example_seven(client.clone()).await;
+    } else if selection == 7 {
+        example_eight(client.clone()).await;
     }
 }
 
@@ -47,7 +54,7 @@ async fn example_one(client: reqwest::Client) {
     println!("{response}");
 }
 
-/// This will panic
+/// This will panic, DNS error
 async fn example_two(client: reqwest::Client) {
     let response = client
         .get("https://fake.fake.fake")
@@ -117,5 +124,64 @@ async fn example_six(client: reqwest::Client) {
         Err(e) => {
             eprintln!("Error making HTTP request:\n{e}");
         }
+    }
+}
+
+/// This will panic, can't parse JSON
+async fn example_seven(client: reqwest::Client) {
+    match client
+        .get("https://jsonplaceholder.typicode.com/todos/1")
+        .send()
+        .await
+    {
+        Ok(response) => match response.error_for_status() {
+            Ok(response) => {
+                println!(
+                    "{:?}",
+                    response.json::<fail_to_parse::Todo>().await.unwrap()
+                );
+            }
+            Err(e) => {
+                eprintln!("Received HTTP error status in response:\n{e}");
+            }
+        },
+        Err(e) => {
+            eprintln!("Error making HTTP request:\n{e}");
+        }
+    }
+}
+
+/// This will print an error
+async fn example_eight(client: reqwest::Client) {
+    match client
+        .get("https://jsonplaceholder.typicode.com/todos/1")
+        .send()
+        .await
+    {
+        Ok(response) => match response.error_for_status() {
+            Ok(response) => match response.json::<fail_to_parse::Todo>().await {
+                Ok(json) => {
+                    println!("{:?}", json);
+                }
+                Err(e) => {
+                    eprintln!("Error parsing JSON response:\n{e}");
+                }
+            },
+            Err(e) => {
+                eprintln!("Received HTTP error status in response:\n{e}");
+            }
+        },
+        Err(e) => {
+            eprintln!("Error making HTTP request:\n{e}");
+        }
+    }
+}
+
+mod fail_to_parse {
+    use super::*;
+
+    #[derive(Debug, Deserialize)]
+    pub struct Todo {
+        pub cannot_parse: bool,
     }
 }
