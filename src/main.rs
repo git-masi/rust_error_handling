@@ -309,7 +309,7 @@ mod nicer_error_handling {
             Ok(result)
         } else {
             Err(AppError::Unexpected(format!(
-                "Expected either a response or an error field and found neither"
+                "Expected either a result or an error in the RPC response object and found neither"
             )))
         }
     }
