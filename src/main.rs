@@ -1,5 +1,5 @@
 use dialoguer::{theme::ColorfulTheme, Select};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
@@ -13,6 +13,7 @@ async fn main() {
         "handle HTTP status >= 400 - print 404 error",
         "no JSON parse error handling - panic",
         "handle JSON parse error handling - print JSON parse error",
+        "handle error message in JSON response body - print error in response body",
     ];
 
     let selection = Select::with_theme(&ColorfulTheme::default())
@@ -38,6 +39,8 @@ async fn main() {
         example_seven(client.clone()).await;
     } else if selection == 7 {
         example_eight(client.clone()).await;
+    } else if selection == 8 {
+        example_nine(client.clone()).await;
     }
 }
 
@@ -183,5 +186,70 @@ mod fail_to_parse {
     #[derive(Debug, Deserialize)]
     pub struct Todo {
         pub cannot_parse: bool,
+    }
+}
+
+/// This prints an error
+async fn example_nine(client: reqwest::Client) {
+    let body = error_in_response::Request::new();
+
+    match client
+        .post("http://localhost:8080/rpc")
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(response) => match response.error_for_status() {
+            Ok(response) => match response.json::<error_in_response::Response>().await {
+                Ok(json) => {
+                    if let Some(error) = json.error {
+                        eprintln!("Error from RPC server:\n{}", error.message);
+                    } else if let Some(result) = json.result {
+                        println!("{}", result);
+                    } else {
+                        eprintln!("Expected a response or an error and got:\n{:?}", json);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error parsing JSON response:\n{e}");
+                }
+            },
+            Err(e) => {
+                eprintln!("Received HTTP error status in response:\n{e}");
+            }
+        },
+        Err(e) => {
+            eprintln!("Error making HTTP request:\n{e}");
+        }
+    }
+}
+
+mod error_in_response {
+    use super::*;
+
+    #[derive(Debug, Serialize)]
+    pub struct Request {
+        pub method: &'static str,
+        pub params: (&'static str, &'static str),
+    }
+
+    impl Request {
+        pub fn new() -> Self {
+            Self {
+                method: "unknown",
+                params: ("123abc", "987xyz"),
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct Response {
+        pub result: Option<String>,
+        pub error: Option<Error>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct Error {
+        pub message: String,
     }
 }
