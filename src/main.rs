@@ -19,23 +19,15 @@ async fn main() {
         .unwrap();
 
     if selection == 0 {
-        return example_one(client.clone()).await;
-    }
-
-    if selection == 1 {
-        return example_two(client.clone()).await;
-    }
-
-    if selection == 2 {
-        return example_three(client.clone()).await;
-    }
-
-    if selection == 3 {
-        return example_four(client.clone()).await;
-    }
-
-    if selection == 4 {
-        return example_five(client.clone()).await;
+        example_one(client.clone()).await;
+    } else if selection == 1 {
+        example_two(client.clone()).await;
+    } else if selection == 2 {
+        example_three(client.clone()).await;
+    } else if selection == 3 {
+        example_four(client.clone()).await;
+    } else if selection == 4 {
+        example_five(client.clone()).await;
     }
 }
 
