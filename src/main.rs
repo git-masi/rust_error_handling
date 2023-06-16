@@ -14,6 +14,7 @@ async fn main() {
         "no JSON parse error handling - panic",
         "handle JSON parse error handling - print JSON parse error",
         "handle error message in JSON response body - print error in response body",
+        "handle all errors using a terser interface",
     ];
 
     let selection = Select::with_theme(&ColorfulTheme::default())
@@ -41,6 +42,8 @@ async fn main() {
         example_eight(client.clone()).await;
     } else if selection == 8 {
         example_nine(client.clone()).await;
+    } else if selection == 9 {
+        example_ten(client.clone()).await;
     }
 }
 
@@ -226,6 +229,105 @@ async fn example_nine(client: reqwest::Client) {
 
 mod error_in_response {
     use super::*;
+
+    #[derive(Debug, Serialize)]
+    pub struct Request {
+        pub method: &'static str,
+        pub params: (&'static str, &'static str),
+    }
+
+    impl Request {
+        pub fn new() -> Self {
+            Self {
+                method: "unknown",
+                params: ("123abc", "987xyz"),
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct Response {
+        pub result: Option<String>,
+        pub error: Option<Error>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct Error {
+        pub message: String,
+    }
+}
+
+/// This prints an error
+async fn example_ten(client: reqwest::Client) {
+    let body = nicer_error_handling::Request::new();
+
+    let builder = client.post("http://localhost:8080/rpc").json(&body);
+
+    let json =
+        nicer_error_handling::handle_request::<nicer_error_handling::Response>(builder).await;
+
+    match nicer_error_handling::handle_response(json) {
+        Ok(result) => {
+            println!("{result}");
+        }
+        Err(e) => {
+            eprintln!("{e}");
+        }
+    }
+}
+
+mod nicer_error_handling {
+    use serde::de::DeserializeOwned;
+
+    use super::*;
+
+    #[derive(thiserror::Error, Debug)]
+    pub enum RpcApiError {
+        #[error("Unexpected TCP error:\n{0}")]
+        Tcp(reqwest::Error),
+        #[error("Request came back with HTTP error response code:\n{0}")]
+        HttpResponse(reqwest::Error),
+        #[error("Could not parse JSON response:\n{0}")]
+        JsonParse(reqwest::Error),
+        #[error("Error message in JSON response:\n{0}")]
+        Message(String),
+        #[error("An unexpected error occurred:\n{0}")]
+        Unexpected(String),
+    }
+
+    pub async fn handle_request<T: DeserializeOwned>(
+        builder: reqwest::RequestBuilder,
+    ) -> Result<T, RpcApiError> {
+        builder
+            .send()
+            .await
+            .map_err(|e| RpcApiError::Tcp(e))?
+            .error_for_status()
+            .map_err(|e| RpcApiError::HttpResponse(e))?
+            .json::<T>()
+            .await
+            .map_err(|e| RpcApiError::JsonParse(e))
+    }
+
+    pub fn handle_response(
+        json: Result<self::Response, RpcApiError>,
+    ) -> Result<String, RpcApiError> {
+        match json {
+            Ok(json) => {
+                if let Some(error) = json.error {
+                    Err(RpcApiError::Message(error.message))
+                } else if let Some(result) = json.result {
+                    Ok(result)
+                } else {
+                    Err(RpcApiError::Unexpected(format!(
+                        "Expected a response or an error and got:\n{:?}",
+                        json
+                    )))
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
 
     #[derive(Debug, Serialize)]
     pub struct Request {
