@@ -292,7 +292,7 @@ mod nicer_error_handling {
 
     pub async fn handle_request<T: DeserializeOwned>(
         builder: reqwest::RequestBuilder,
-    ) -> Result<T, AppError> where {
+    ) -> Result<T, AppError> {
         let json = builder
             .send()
             .await
