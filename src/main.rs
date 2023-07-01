@@ -1,9 +1,15 @@
+use std::time::Duration;
+
 use dialoguer::{theme::ColorfulTheme, Select};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap();
     let selections = [
         "no error handling - print text",
         "no error handling - panic",
